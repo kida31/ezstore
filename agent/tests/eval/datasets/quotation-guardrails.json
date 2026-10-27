@@ -1,0 +1,101 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "off_topic_weather",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "今天台北天氣如何？"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "禮貌拒絕，說明只能協助報價單相關操作；不要回答天氣，也不要附上報價單或訂單連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "off_topic_customer_crud",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "幫我新增一個客戶，客戶名稱：測試公司，統一編號：12345678"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "禮貌拒絕，說明只能協助報價單相關操作；不要執行客戶新增，也不要附上報價單或訂單連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "clarify_then_complete",
+      "agent_data": {
+        "agents": {
+          "quotation_agent": {
+            "agent_id": "quotation_agent",
+            "agent_type": "WorkflowAgent",
+            "instruction": "EZStore quotation management agent."
+          }
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{"text": "我要查詢報價單"}]
+                }
+              },
+              {
+                "author": "quotation_agent",
+                "content": {
+                  "role": "model",
+                  "parts": [
+                    {
+                      "text": "請提供報價單編號（格式：QT-YYYYMMDD-NNN）。"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "turn_index": 1,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{"text": "QT-20260330-001"}]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "接續完成查詢，回覆 QT-20260330-001 的完整內容與純文字系統連結，不要再次只回覆「請提供報價單編號」。"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

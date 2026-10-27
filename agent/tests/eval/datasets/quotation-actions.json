@@ -1,0 +1,114 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "get_quotation",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "我要查詢報價單，報價單編號：QT-20260330-001"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆 QT-20260330-001 的完整內容，包含客戶、報價因子、總價、品項清單與純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "list_customer_quotations",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "我要查詢客戶的報價單清單，客戶名稱：史塔克工業"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆客戶「史塔克工業」的報價單清單，包含 QT-20260115-001 與純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "duplicate_quotation",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "我要複製報價單，報價單編號：QT-20260330-001"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆新產生的報價單編號，並附上原始報價單與新報價單的純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "update_pricing_factor",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "我要修改報價單報價因子，報價單編號：QT-20260330-001，報價因子改為 1.5"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "說明原始報價單 QT-20260330-001 未被更動，新副本的報價因子為 1.5，並附上新報價單的純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "adjust_total_price",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "我要修改報價單總價，報價單編號：QT-20260330-001，總價改為 8000"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "說明原始報價單未被更動，新副本的總價已調整到 8000 或最接近值，並附上新報價單的純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "convert_to_order",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "我要將報價單轉訂單，報價單編號：QT-20260330-001"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆新訂單編號與訂單的純文字系統連結，並說明報價單已轉為訂單。"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
