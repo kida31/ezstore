@@ -20,7 +20,12 @@ from google.adk.tools.tool_context import ToolContext
 
 logger = logging.getLogger(__name__)
 
-MCP_URL = os.getenv("MCP_URL", "http://localhost:8010/mcp")
+DEFAULT_MCP_URL = "http://localhost:8010/mcp"
+
+
+def mcp_url() -> str:
+    """Resolve MCP_URL at call time so a project-local .env is respected."""
+    return os.getenv("MCP_URL", DEFAULT_MCP_URL)
 
 _toolset: McpToolset | None = None
 _tools: dict[str, BaseTool] | None = None
@@ -40,7 +45,7 @@ def _get_toolset() -> McpToolset:
     if _toolset is None:
         _toolset = McpToolset(
             connection_params=StreamableHTTPConnectionParams(
-                url=MCP_URL,
+                url=mcp_url(),
                 timeout=5.0,
                 sse_read_timeout=300.0,
             )
@@ -128,7 +133,7 @@ async def call_mcp_tool(
     try:
         tools = await _get_tools()
     except Exception as exc:  # noqa: BLE001 - surfaced as a user-facing message
-        logger.exception("Unable to load MCP tools from %s", MCP_URL)
+        logger.exception("Unable to load MCP tools from %s", mcp_url())
         return ToolResult(
             text=f"操作失敗：無法連線報價單系統（{exc}）。",
             is_error=True,
