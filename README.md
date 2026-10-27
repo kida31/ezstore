@@ -18,7 +18,7 @@ EZStore provides four core modules for managing the B2B sales pipeline:
 | **Product Management** | CRUD for products — product number, name, description, cost, list price, inventory, supplier |
 | **Quotation Management** | Create, edit, publish, and delete quotations. Pricing is computed from a *pricing factor* applied to list prices. Published quotations become immutable. |
 | **Order Management** | CRUD for orders — optionally linked to a published quotation |
-| **AI Agent** | Natural language quotation assistant — query, duplicate, adjust pricing factor/total price, convert to order. Google ADK 2.x graph Workflow + Gemini 3.8 Flash + MCP Server, scaffolded with google-agents-cli. |
+| **AI Agent** | Natural language quotation assistant — query, duplicate, adjust pricing factor/total price, convert to order. Google ADK 2.x graph Workflow + Gemini 3.8 Flash (`AGENT_MODEL`; 3.5 fallback) + MCP Server, scaffolded with google-agents-cli. |
 
 ### Tech Stack
 
@@ -27,7 +27,7 @@ EZStore provides four core modules for managing the B2B sales pipeline:
 | Backend | Go 1.25 · Gin · GORM · Swagger (swaggo) · Testify |
 | Frontend | React 19 · TypeScript · Tailwind CSS 4 · Vite 8 · TanStack React Query · React Hook Form · React Router |
 | Database | PostgreSQL 16 |
-| AI Agent | Python 3.12 · Google ADK 2.10+ (graph Workflow API) · google-agents-cli 1.7 · Gemini 3.8 Flash · MCP Python SDK 2.x (Streamable HTTP) · uv |
+| AI Agent | Python 3.12 · Google ADK 2.10+ (graph Workflow API) · google-agents-cli 1.11 · Gemini 3.8 Flash (`AGENT_MODEL`; 3.5 fallback) · MCP Python SDK 2.x (Streamable HTTP) · uv |
 | Build & Deploy | Docker · Docker Compose · Bun (frontend) · Nginx (frontend serving & API proxy) |
 
 ### Project Structure
@@ -38,8 +38,8 @@ ezstore/
 ├── scripts/
 │   └── seed-test-data.sql      # Idempotent test dataset (TRUNCATE + INSERT)
 ├── .env.example                # GEMINI_API_KEY and agent settings (copy to .env)
-├── agent/                      # ★ LAB deliverable — not in this branch. Build it from agent-spec-prompt.md
-│                               #   (agents-cli scaffold → ADK 2.x graph Workflow → connect to mcp_server)
+├── agent/                      # ADK 2.x graph Workflow agent (quotation_agent) + MCP client + eval
+│                               #   (see agent/README.md for the graph design and adding operations)
 ├── mcp_server/
 │   ├── Dockerfile
 │   ├── pyproject.toml           # mcp>=2.2, httpx (+ uv.lock)
@@ -254,9 +254,9 @@ profit_rate  = profit ÷ total_price
 
 ### AI Agent
 
-> **This branch (`workshop-start`) is the lab starting point.** The backend, frontend Chat UI, MCP Server and database are provided; the `agent/` service is what you build by feeding `agent-spec-prompt.md` to your AI coding tool. The description below is the target you are building toward.
+The `agent/` service is implemented in this branch. It is a natural-language quotation assistant built with Google ADK 2.x. The agent is a **graph Workflow**: only one node calls the LLM (intent classification); tool selection, argument passing, clarification and refusal are all deterministic program logic.
 
-EZStore includes a natural-language quotation assistant built with Google ADK 2.x. The agent is a **graph Workflow**: only one node calls the LLM (intent classification); tool selection, argument passing, clarification and refusal are all deterministic program logic.
+`AGENT_MODEL` selects the Gemini model. The default is `gemini-3.8-flash`; if 3.8 returns `503 high demand`, set `AGENT_MODEL=gemini-3.5-flash`. See [agent/README.md](agent/README.md) for the full design.
 
 **Architecture:**
 
@@ -264,11 +264,11 @@ EZStore includes a natural-language quotation assistant built with Google ADK 2.
 User → React Chat UI → nginx /agent-api → Agent (ADK FastAPI, port 8080) → MCP Server (port 8000) → Backend REST API
                                                │                                  Streamable HTTP
                                           Gemini 3.8 Flash                        (mcp Python SDK 2.x)
-                                        (AI Studio API key)
+                                  (AI Studio API key or Vertex AI; AGENT_MODEL)
 
 Workflow graph (agent/quotation_agent/agent.py):
 
-  START → load_context → classify_intent (LLM, output_schema=Intent) → route
+  START → load_context → guard → classify_intent (LLM, output_schema=Intent) → route_intent
             ├─ get_quotation / list_customer_quotations / duplicate_quotation
             ├─ update_pricing_factor / adjust_total_price / convert_to_order    ← each calls one MCP tool
             ├─ clarify     (missing fields → ask, keep state.pending_intent)
@@ -305,8 +305,9 @@ BACKEND_URL=http://localhost:8080 MCP_PORT=8010 uv run python server.py
 # Agent (in another terminal)
 cd agent && cp .env.example .env    # fill GEMINI_API_KEY, set MCP_URL=http://localhost:8010/mcp
                                     # or Vertex AI: GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT after `gcloud auth application-default login`
-uv sync --group dev
-agents-cli playground               # web UI
+                                    # AGENT_MODEL defaults to gemini-3.8-flash; use gemini-3.5-flash if 3.8 is unavailable
+uv sync --group dev --extra eval
+agents-cli playground --port 8090   # web UI (8080 is used by the backend)
 agents-cli run "我要查詢報價單，報價單編號：QT-20260330-001"
 
 # Tests
@@ -500,11 +501,12 @@ uv sync && BACKEND_URL=http://localhost:8080 MCP_PORT=8010 uv run python server.
 
 # Agent (reads agent/.env: GEMINI_API_KEY, MCP_URL, AGENT_MODEL)
 cd agent
-uv sync --group dev
-agents-cli playground                     # local web UI
+uv sync --group dev --extra eval
+agents-cli playground --port 8090         # local web UI (8080 is the backend)
 agents-cli run "我要查詢報價單，報價單編號：QT-20260330-001"
 uv run pytest tests/unit tests/integration -q
 agents-cli eval run                       # LLM-judged eval over tests/eval/datasets
+# If gemini-3.8-flash returns 503, set AGENT_MODEL=gemini-3.5-flash in agent/.env
 ```
 
 ### Common Modification Scenarios

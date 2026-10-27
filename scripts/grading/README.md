@@ -22,6 +22,8 @@ python3 scripts/grading/grade_agent.py --suite scripts/grading/student-suite.jso
 
 報告寫在 `artifacts/grading/<時間>/report.md` 與 `report.json`，含每題回覆原文與評審理由。
 
+> **注意：** `agents-cli` 1.11 即使所有指標都是本地執行，仍會建立 Gemini platform client。若出現找不到 GCP project 的錯誤，請先 `gcloud auth application-default login` 並設定 `GOOGLE_CLOUD_PROJECT`（Agent 模型與本地 LLM 評審仍可用 `GEMINI_API_KEY`）；或改用 `eval grade` 支援純本機指標的 `agents-cli` 版本。
+
 ## 學生 suite 的配分（滿分 100）
 
 | 群組 | 題庫 | 題目分 | 後端核對分 |

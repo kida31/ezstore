@@ -28,6 +28,9 @@ jobs:
           - component: mcp-server
             context: ./mcp_server
             dockerfile: ./mcp_server/Dockerfile
+          - component: agent
+            context: ./agent
+            dockerfile: ./agent/Dockerfile
           - component: e2e
             context: ./frontend
             dockerfile: ./frontend/e2e/Dockerfile
