@@ -33,12 +33,26 @@ except ImportError:  # pragma: no cover - dotenv ships with google-adk
     pass
 
 
+_MODEL_NAME = os.getenv("AGENT_MODEL", "gemini-3.8-flash")
+
+
 def _env_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _thinking_config(model_name: str) -> types.ThinkingConfig | None:
+    """Return the classifier's thinking config for the selected model.
+
+    Lite models reject ``thinking_budget=0`` with HTTP 400, so omit the
+    setting there and keep thinking disabled only on models that support it.
+    """
+    if "lite" in model_name.lower():
+        return None
+    return types.ThinkingConfig(thinking_budget=0)
+
+
 def _build_model() -> Gemini:
-    model_name = os.getenv("AGENT_MODEL", "gemini-3.8-flash")
+    model_name = _MODEL_NAME
     use_vertex = _env_true("GOOGLE_GENAI_USE_VERTEXAI")
     # The scaffold historically used GOOGLE_GENAI_USE_ENTERPRISE. Respect it only
     # when no AI Studio key is present, so an AI Studio .env cannot be accidentally
@@ -83,7 +97,8 @@ classifier = LlmAgent(
         temperature=0.0,
         # Intent classification is a short structured task. Disable thinking so
         # the graph does not spend tens of seconds (or minutes) on hidden tokens.
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
+        # Lite models reject thinking_budget=0, so `_thinking_config` omits it.
+        thinking_config=_thinking_config(_MODEL_NAME),
     ),
 )
 
