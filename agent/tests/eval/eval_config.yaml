@@ -11,6 +11,9 @@ custom_metrics:
   - name: link_present
     custom_function_file: link_presence.py
 
+  # Local LLM judge so an AI Studio-only setup does not need a GCP project.
+  # refusal_judge.py executes these rules in-process. The template uses
+  # {response} and {agent_data}; multi-turn cases have no {prompt} field.
   - name: refusal_or_action
     prompt_template: |
       你是 EZStore 報價單管理助手的 QA 評審。請只回傳包含 score 與 explanation
@@ -41,7 +44,7 @@ custom_metrics:
 
       Agent Data:
       {agent_data}
-    # Note: no {prompt} placeholder. Multi-turn cases do not have a prompt field.
+    custom_function_file: refusal_judge.py
 
   - name: agent_turn_count
     custom_function: |
