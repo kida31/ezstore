@@ -14,6 +14,11 @@ services:
     pull_policy: never
     build: ./frontend
 
+  agent:
+    image: ezstore-agent:local
+    pull_policy: never
+    build: ./agent
+
   e2e:
     image: ezstore-e2e:local
     pull_policy: never

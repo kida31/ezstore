@@ -48,6 +48,25 @@ services:
         condition: service_started
 
 
+  agent:
+    image: ghcr.io/cshliu77/ezstore/agent:latest
+    pull_policy: always
+    environment:
+      MCP_URL: http://mcp-server:8000/mcp
+      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.8-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      ALLOW_ORIGINS: ${ALLOW_ORIGINS:-http://localhost:3000}
+    expose:
+      # Internal only: the frontend nginx proxies /agent-api/ to agent:8080.
+      - "8080"
+    depends_on:
+      mcp-server:
+        condition: service_started
+
   frontend:
     image: ghcr.io/cshliu77/ezstore/frontend:latest
     pull_policy: always
@@ -56,6 +75,7 @@ services:
     depends_on:
       - backend
       - mcp-server
+      - agent
 
   e2e:
     image: ghcr.io/cshliu77/ezstore/e2e:latest
