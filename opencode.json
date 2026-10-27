@@ -1,0 +1,45 @@
+{
+  "mcp": {
+    "servers": {
+      "adk-docs": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "--from",
+          "mcpdoc",
+          "--with",
+          "mcp<2",
+          "mcpdoc",
+          "--urls",
+          "AgentDevelopmentKit:https://adk.dev/llms.txt",
+          "--transport",
+          "stdio"
+        ]
+      },
+      "playwright": {
+        "type": "local",
+        "command": [
+          "npx",
+          "@playwright/mcp@latest"
+        ],
+        "enabled": true
+      },
+      "chrome-devtools": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "chrome-devtools-mcp@latest"
+        ]
+      }
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer ctx7sk-48c1968c-c824-4aa6-8394-022e26ed136e"
+      }
+    }
+  }
+}
