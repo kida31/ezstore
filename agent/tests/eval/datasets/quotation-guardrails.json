@@ -4,7 +4,11 @@
       "eval_case_id": "off_topic_weather",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "今天台北天氣如何？"}]
+        "parts": [
+          {
+            "text": "今天台北天氣如何？"
+          }
+        ]
       },
       "reference": {
         "response": {
@@ -56,7 +60,11 @@
                 "author": "user",
                 "content": {
                   "role": "user",
-                  "parts": [{"text": "我要查詢報價單"}]
+                  "parts": [
+                    {
+                      "text": "我要查詢報價單"
+                    }
+                  ]
                 }
               },
               {
@@ -79,7 +87,11 @@
                 "author": "user",
                 "content": {
                   "role": "user",
-                  "parts": [{"text": "QT-20260330-001"}]
+                  "parts": [
+                    {
+                      "text": "QT-20260330-001"
+                    }
+                  ]
                 }
               }
             ]
@@ -92,6 +104,27 @@
           "parts": [
             {
               "text": "接續完成查詢，回覆 QT-20260330-001 的完整內容與純文字系統連結，不要再次只回覆「請提供報價單編號」。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "not_found_quotation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "我要查詢報價單，報價單編號：QT-20990101-001"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "明確告知找不到這張報價單，不要編造內容。"
             }
           ]
         }
