@@ -154,6 +154,63 @@ python3 scripts/grading/grade_agent.py --suite scripts/grading/student-suite.jso
 > use `GEMINI_API_KEY`. A CLI version whose `eval grade` supports local-only
 > metrics avoids the extra GCP requirement.
 
+## Order Agent (second app, read-only)
+
+`order_agent/` is a second ADK `App` in the same container and on the same port,
+served at `/apps/order_agent` and selected in the UI with
+`/agent?app=order_agent`. It queries orders only; it never writes.
+
+```
+START → load_context → guard ─┬─ off_topic / quotation / readonly → fixed reply
+                              ├─ direct (bare ORD-… after a clarify) → route_intent
+                              └─ classify_intent (LLM) → route_intent
+                                   ├─ get_order / list_orders / order_summary
+                                   ├─ clarify   (missing number or unknown status)
+                                   ├─ manual    (model/tool failure, no retry)
+                                   └─ refuse
+                                 all → respond
+```
+
+Deterministic shortcuts save quota: obvious refusals, the write-request guard and
+a bare order number after a clarification cost **zero** model calls. The 8-turn
+acceptance set in the spec therefore needs 4 calls, not 8.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ORDER_AGENT_MAX_ATTEMPTS` | `3` (hard cap 3) | Total attempts per model call, then `manual` |
+| `ORDER_AGENT_LLM_TIMEOUT_MS` | `10000` | Per-request timeout; the API rejects anything below 10 s |
+| `ORDER_AGENT_MAX_LLM_CALLS` | `50` | Process-wide budget; over budget → `manual` |
+| `ORDER_AGENT_FAKE_LLM` | off | Rule-based classifier, zero API calls |
+
+```bash
+cd agent
+uv run pytest tests/unit/test_order_agent.py -q            # 0 API calls
+MCP_URL=http://localhost:8010/mcp \
+  uv run pytest tests/integration/test_order_mcp.py -q     # 0 API calls
+ORDER_AGENT_FAKE_LLM=1 uv run adk web                      # 0 API calls
+```
+
+Eval: `tests/eval/datasets/order-actions.json`,
+`tests/eval/datasets/order-guardrails.json`, `tests/eval/order_eval_config.yaml`
+(adds the `status_valid` code metric; the judge is
+`tests/eval/order_refusal_judge.py`). Run it once, after the local checks pass.
+
+> **Eval target:** `agents-cli` reads `agents-cli-manifest.yaml`, which points at
+> `quotation_agent`. In-process inference therefore scores the wrong app. Start
+> the server and pass `--url` + `--app-name order_agent`:
+>
+> ```bash
+> AGENT_MODEL=gemini-3.1-flash-lite MCP_URL=http://localhost:8010/mcp \
+>   uv run uvicorn quotation_agent.fast_api_app:app --host 127.0.0.1 --port 8099 &
+>
+> agents-cli eval generate --dataset tests/eval/datasets/order-actions.json \
+>   --url http://127.0.0.1:8099 --app-name order_agent \
+>   -o artifacts/traces/order-actions.json
+> agents-cli eval grade --traces artifacts/traces/order-actions.json \
+>   --config tests/eval/order_eval_config.yaml --qps 1 \
+>   --output artifacts/grade_results/order-actions
+> ```
+
 ## Docker
 
 The Compose `agent` service is internal-only (no host port) and depends on

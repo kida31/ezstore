@@ -41,7 +41,7 @@ select = [
 ignore = ["E501", "C901", "B006"] # ignore line too long, too complex
 
 [tool.ruff.lint.isort]
-known-first-party = ["quotation_agent"]
+known-first-party = ["quotation_agent", "order_agent"]
 
 [tool.ty]
 # ty is Astral's Rust-based type checker (same team as ruff/uv)
@@ -78,4 +78,4 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 
 [tool.hatch.build.targets.wheel]
-packages = ["quotation_agent"]
+packages = ["quotation_agent", "order_agent"]

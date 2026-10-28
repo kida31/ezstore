@@ -60,6 +60,11 @@ services:
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       ALLOW_ORIGINS: ${ALLOW_ORIGINS:-http://localhost:3000}
+      # Order agent (read-only second app); defaults match spec section 2.4.
+      ORDER_AGENT_MAX_ATTEMPTS: ${ORDER_AGENT_MAX_ATTEMPTS:-3}
+      ORDER_AGENT_LLM_TIMEOUT_MS: ${ORDER_AGENT_LLM_TIMEOUT_MS:-10000}
+      ORDER_AGENT_MAX_LLM_CALLS: ${ORDER_AGENT_MAX_LLM_CALLS:-50}
+      ORDER_AGENT_FAKE_LLM: ${ORDER_AGENT_FAKE_LLM:-}
     expose:
       # Internal only: the frontend nginx proxies /agent-api/ to agent:8080.
       - "8080"

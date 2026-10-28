@@ -295,6 +295,16 @@ Every user message re-runs the graph from `START`; cross-turn memory lives in se
 - Off-topic requests are **refused by code**, missing fields trigger a **clarification turn**
 - Agent runs even without an API key (chat returns a clear error), so `docker compose up` never fails on a missing key
 
+**Second app — order inquiry (read-only):**
+
+`agent/order_agent/` is a second graph Workflow served by the same container at
+`/apps/order_agent`, reachable in the UI at `http://localhost:3000/agent?app=order_agent`.
+It looks up an order, lists a customer's orders and summarises counts/totals; it
+refuses writes, quotation operations and off-topic requests without any tool
+call. It adds three read-only MCP tools (`get_order`, `list_orders`,
+`order_summary`) and never changes backend state. See
+[agent/README.md](agent/README.md#order-agent-second-app-read-only).
+
 **Local development:**
 
 ```bash

@@ -26,6 +26,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY ./pyproject.toml ./README.md ./
 COPY ./uv.lock ./
 COPY ./quotation_agent ./quotation_agent
+COPY ./order_agent ./order_agent
 
 RUN uv sync --frozen --no-dev
 

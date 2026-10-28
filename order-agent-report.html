@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Order Inquiry Agent — Implementation Report</title>
+<style>
+  :root {
+    --ink: #111827;
+    --muted: #6b7280;
+    --line: #d1d5db;
+    --accent: #1d4ed8;
+    --soft: #f3f4f6;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: #e5e7eb; }
+
+  body {
+    margin: 0 auto;
+    padding: 12mm 13mm;
+    max-width: 210mm;
+    background: #fff;
+    color: var(--ink);
+    font-family: "Inter", "Noto Sans", "Helvetica Neue", system-ui, -apple-system,
+      "Segoe UI", sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 3.5mm; margin-bottom: 4mm; }
+  h1 { font-size: 18pt; line-height: 1.2; margin: 0 0 1.5mm; letter-spacing: -0.2pt; }
+  .subtitle { color: var(--muted); font-size: 9.5pt; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 1mm 5mm; margin-top: 2mm; color: var(--muted); font-size: 8.5pt; }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: 11pt;
+    margin: 3.4mm 0 1.4mm;
+    padding-left: 2.2mm;
+    border-left: 3px solid var(--accent);
+    line-height: 1.3;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  p { margin: 0 0 2mm; text-align: justify; }
+  p.evidence { text-align: left; word-break: break-word; }
+  p.evidence code { word-break: break-all; }
+
+  code {
+    font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 8.5pt;
+    background: var(--soft);
+    padding: 0.1mm 0.8mm;
+    border-radius: 2px;
+  }
+
+  figure { margin: 2mm 0 3mm; break-inside: avoid; page-break-inside: avoid; }
+  .crop { width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 1.5mm; }
+  .crop img { width: 100%; display: block; height: 100%; object-fit: cover; object-position: top; }
+  .crop.short { aspect-ratio: 1280 / 440; }
+  figcaption { color: var(--muted); font-size: 8pt; margin-top: 1.2mm; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5mm 0 2.5mm;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  th, td { border: 1px solid var(--line); padding: 1.3mm 2mm; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; width: 34%; }
+
+  ol { margin: 1mm 0 2mm; padding-left: 4.5mm; }
+  li { margin-bottom: 1.8mm; }
+  li::marker { color: var(--accent); font-weight: 600; }
+
+  .note {
+    background: var(--soft);
+    border-left: 3px solid var(--accent);
+    padding: 2mm 2.5mm;
+    font-size: 9pt;
+    margin: 2mm 0 0;
+    break-inside: avoid;
+  }
+
+  footer {
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 8pt;
+  }
+
+  @page { size: A4; margin: 12mm 13mm; }
+
+  @media print {
+    html { background: #fff; }
+    body { padding: 0; max-width: none; }
+  }
+
+  @media screen {
+    body { box-shadow: 0 2mm 12mm rgba(0,0,0,.12); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Order Inquiry Agent — Implementation Report</h1>
+  <p class="subtitle">Second agent application (30%) · EZStore quotation &amp; order system</p>
+  <div class="meta">
+    <span><b>Scope</b>: <code>agent/order_agent/</code>, <code>mcp_server/server.py</code></span>
+    <span><b>Model</b>: <code>gemini-3.1-flash-lite</code></span>
+    <span><b>Date</b>: 2026-10-28</span>
+  </div>
+</header>
+
+<h2>Architecture</h2>
+<p>
+  A second ADK app in the existing <code>agent</code> container and port 8080
+  (<code>/apps/order_agent</code>). It has no write path, adds no service and changes no backend.
+  The graph has exactly one LLM node, <code>classify_intent</code>; guards, routing, arguments,
+  clarification, refusal and error handling are deterministic Python. The tools are read-only:
+  <code>get_order</code>, <code>list_orders</code>, <code>order_summary</code>. Status accepts only
+  <code>pending / confirmed / completed / cancelled</code>; anything else is explained and clarified
+  rather than silently returning every order. Off-topic requests, quotation operations, write
+  requests and the “bare order number after a clarification” turn are designed not to reach the
+  model; in one automated pass, the 8-turn acceptance set used 4 calls.
+</p>
+
+<div class="note">
+  <b>Same page, different app.</b> Both agents use the same Chat UI component; the only difference
+  is the <code>?app=</code> query. <code>/agent</code> → <code>quotation_agent</code>;
+  <code>/agent?app=order_agent</code> → <code>order_agent</code>. The value is sent as the app name
+  in <code>/apps/{app}/users/.../sessions</code> and <code>/run_sse</code>.
+</div>
+
+<h2>Use cases</h2>
+<figure>
+  <img src=".screenshots/order-agent-use-cases.png" alt="Order agent: detail, customer list, status summary"
+       style="width:100%;display:block;border:1px solid #d1d5db;border-radius:1.5mm;" />
+  <figcaption>One conversation covers detail lookup, a customer’s orders and a status summary; counts and totals are computed in code.</figcaption>
+</figure>
+
+<h2>Boundary with the quotation agent</h2>
+<figure>
+  <div class="crop short">
+    <img src=".screenshots/order-agent-negative-quotation.png" alt="Quotation agent refusing an order lookup" />
+  </div>
+  <figcaption>“我要查詢訂單，訂單編號：ORD-20260118-001” sent to <code>/agent</code> is refused — the two guards are complementary.</figcaption>
+</figure>
+<p>
+  The reverse also holds: the order agent refuses quotation operations and any order write
+  (for example, changing the status to “已出貨”) and points the user to the quotation agent or to
+  manual processing in the UI.
+</p>
+
+<h2>Preliminary automated checks</h2>
+<p>
+  These are outputs from automated runs. They have not been independently re-checked and should be
+  read as an indication that the agent is expected to behave as described, not as a verified
+  guarantee.
+</p>
+<table>
+  <tr><th>Unit + integration tests (no Gemini calls)</th><td>38 passed</td></tr>
+  <tr><th>Acceptance set (8 turns)</th><td>8/8 in one pass; 4 model calls</td></tr>
+  <tr><th>Eval (6 cases)</th>
+      <td>one run reported quality 5.00, link 1.00, refusal 1.00, status 1.00, turns 1.33 (1, 1, 2); 0 errors</td></tr>
+  <tr><th>Docker</th><td>5 services reported healthy at run time; no new service added</td></tr>
+</table>
+<p class="evidence">
+  Raw outputs: <code>agent/artifacts/grade_results/order-{actions,guardrails}/*.html</code>,
+  <code>agent/artifacts/traces/order-*.json</code>.
+</p>
+
+<h2>Two findings worth recording</h2>
+<ol>
+  <li>
+    <b>The eval initially graded the wrong agent.</b> <code>agents-cli</code> reads
+    <code>agents-cli-manifest.yaml</code> (<code>agent_directory: quotation_agent</code>), so
+    in-process inference ignored <code>--app-name</code>. The first run produced quality 5.0 but
+    refusal 0.0; reading the per-case reasons showed the replies were quotation-agent refusals.
+    Switched to a local server plus <code>--url</code> and <code>--app-name order_agent</code>, and
+    documented the commands in <code>agent/README.md</code>. A plausible average does not prove the
+    right thing was graded.
+  </li>
+  <li>
+    <b>Retries and budget.</b> At most 3 attempts per model call, then a fixed manual-intervention
+    reply; auth/MCP/seed failures are never retried. Our call log recorded 34 of 50 calls, including one
+    failure (an 8 s timeout rejected by the API; raised to 10 s) and 9 calls spent grading the wrong
+    agent.
+  </li>
+</ol>
+
+<div class="note">
+  <b>Read-only by design:</b> the agent is given no MCP tool that mutates data, and the refusal and
+  clarification paths are written to call no tools at all. A spot check after one run matched the
+  seed data; this was not an exhaustive audit.
+</div>
+
+<footer>
+  EZStore — ADK 2.13 graph Workflow · MCP Server (Streamable HTTP) · reproduce via
+  <code>agent/README.md</code>.
+</footer>
+
+</body>
+</html>

@@ -6,7 +6,10 @@ interface ChatMessage {
   content: string;
 }
 
-const APP_NAME = 'quotation_agent';
+// The chat page renders whichever ADK app the URL selects, defaulting to the
+// quotation agent so the existing /agent route keeps working untouched.
+const APP_NAME =
+  new URLSearchParams(window.location.search).get('app') || 'quotation_agent';
 const USER_ID = 'web-user';
 
 export default function AgentChatPage() {

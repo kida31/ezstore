@@ -1,0 +1,97 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "off_topic_weather",
+      "prompt": {
+        "role": "user",
+        "parts": [{ "text": "今天台北天氣如何？" }]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "禮貌拒絕，說明只能協助訂單查詢；不要回答天氣，也不要附上任何連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "off_topic_quotation_op",
+      "prompt": {
+        "role": "user",
+        "parts": [{ "text": "幫我複製報價單 QT-20260330-001" }]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "說明這是報價單操作、不在訂單 Agent 範圍，引導改用報價單 Agent；不得呼叫任何工具。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "clarify_then_complete",
+      "agent_data": {
+        "agents": {
+          "order_agent": {
+            "agent_id": "order_agent",
+            "agent_type": "WorkflowAgent",
+            "instruction": "EZStore read-only order inquiry agent."
+          }
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{ "text": "我要查詢訂單" }]
+                }
+              },
+              {
+                "author": "order_agent",
+                "content": {
+                  "role": "model",
+                  "parts": [
+                    {
+                      "text": "請提供訂單編號（格式 ORD-YYYYMMDD-NNN），我再為您查詢。"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "turn_index": 1,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{ "text": "ORD-20260322-001" }]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "接續完成查詢 ORD-20260322-001，回覆訂單內容與純文字系統連結，不要再次只回覆「請提供訂單編號」。"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

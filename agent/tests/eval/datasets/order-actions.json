@@ -1,0 +1,59 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "get_order",
+      "prompt": {
+        "role": "user",
+        "parts": [{ "text": "我要查詢訂單，訂單編號：ORD-20260118-001" }]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆 ORD-20260118-001 的客戶、狀態（已完成）、總價 253350、來源報價單、品項與純文字系統連結 http://localhost:3000/orders/1。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "list_orders",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          { "text": "我要查詢客戶的訂單清單，客戶名稱：史塔克工業" }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "列出該客戶的訂單摘要（訂單編號、狀態、總價、純文字連結），不得列出其他客戶的訂單。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "order_summary",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          { "text": "史塔克工業的訂單各狀態有幾筆？總金額多少？" }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "以程式計算的結果回覆：各狀態筆數（pending/confirmed/completed/cancelled）與合計金額，並附上訂單連結。"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

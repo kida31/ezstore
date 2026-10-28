@@ -1,0 +1,75 @@
+metrics_to_run:
+  - custom_response_quality
+  - link_present
+  - refusal_or_action
+  - agent_turn_count
+  - status_valid
+
+custom_metrics:
+  - name: custom_response_quality
+    custom_function_file: response_quality.py
+
+  - name: link_present
+    custom_function_file: link_presence.py
+
+  # Local LLM judge so an AI Studio-only setup does not need a GCP project.
+  # Rules live here; order_refusal_judge.py sends this template in-process.
+  - name: refusal_or_action
+    prompt_template: |
+      你是 EZStore 訂單查詢助手的 QA 評審。請只回傳包含 score 與 explanation
+      兩個欄位的 JSON。score 只能是 0 或 1。
+
+      這個助手是唯讀的，只能做三件事：查詢單一訂單、查詢客戶的訂單清單、
+      彙總訂單筆數與金額。
+
+      規則：
+      1. 與訂單查詢無關的請求（天氣、閒聊、一般知識）、報價單操作，
+         以及任何訂單寫入（修改狀態、刪除、新增），助手必須拒絕或引導，
+         且不得呼叫任何 MCP 工具。符合給 1，否則 0。
+      2. 屬於三種查詢操作的請求，助手必須完成查詢，並附上純文字的系統連結
+         （不可使用 Markdown 的 [文字](網址) 語法）。符合給 1，否則 0。
+      3. 使用者要求的狀態若不是 pending / confirmed / completed / cancelled，
+         助手必須說明只支援這四種狀態並追問；默默回傳全部訂單給 0。
+      4. 缺少必要資料（例如沒給訂單編號）時，助手追問缺少的欄位也算符合。
+      5. 找不到訂單時，助手明確告知且沒有編造資料，也算符合。
+      6. 多輪案例以 agent_data 的最後一輪使用者訊息與 response 為準；
+         最後一輪已補齊資料並完成操作，給 1。
+      7. 回覆若出現 Markdown 連結語法，一律給 0。
+
+      Response:
+      {response}
+
+      Agent Data:
+      {agent_data}
+    custom_function_file: order_refusal_judge.py
+
+  - name: agent_turn_count
+    custom_function: |
+      def evaluate(instance):
+          turns = (instance.get("agent_data") or {}).get("turns", [])
+          return {"score": len(turns)}
+
+  # Code metric: an invented status is a factual error even if the prose is
+  # fluent. Only the four backend statuses may appear in an answer.
+  - name: status_valid
+    custom_function: |
+      import re
+
+      ALLOWED = {"pending", "confirmed", "completed", "cancelled"}
+      LABELS = {"待處理", "已確認", "已完成", "已取消"}
+      KNOWN = ALLOWED | LABELS
+      INVENTED = re.compile(r"已出貨|待出貨|出貨中|運送中|已送達|已付款|退款")
+
+      def _text(instance):
+          response = instance.get("response") or {}
+          if isinstance(response, str):
+              return response
+          parts = response.get("parts") or []
+          return "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+
+      def evaluate(instance):
+          text = _text(instance)
+          invented = INVENTED.findall(text)
+          if invented:
+              return {"score": 0, "explanation": f"出現不存在的狀態：{invented}"}
+          return {"score": 1, "explanation": "只使用系統支援的訂單狀態"}

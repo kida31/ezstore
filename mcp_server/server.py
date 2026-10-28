@@ -12,6 +12,8 @@
 
 import os
 
+from decimal import Decimal
+
 import httpx
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -351,6 +353,227 @@ async def convert_to_order(quotation_number: str) -> str:
         f"訂單總價: {order['total_price']}\n"
         f"訂單連結: {_order_link(order['id'])}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Order tools (read-only)
+# ---------------------------------------------------------------------------
+
+ORDER_STATUSES: tuple[str, ...] = ("pending", "confirmed", "completed", "cancelled")
+
+ORDER_STATUS_LABELS: dict[str, str] = {
+    "pending": "待處理",
+    "confirmed": "已確認",
+    "completed": "已完成",
+    "cancelled": "已取消",
+}
+
+_STATUS_ALIASES: dict[str, str] = {
+    "待處理": "pending",
+    "未處理": "pending",
+    "已確認": "confirmed",
+    "確認": "confirmed",
+    "已完成": "completed",
+    "完成": "completed",
+    "已取消": "cancelled",
+    "取消": "cancelled",
+}
+
+MAX_ORDER_PAGES = 5
+
+
+def _normalize_status(status: str | None) -> str | None:
+    """Map a user-facing status to its API code, or raise for anything else.
+
+    Deliberately strict: silently dropping an unknown filter would return every
+    order and look like a correct answer to the caller.
+    """
+    if not status or not status.strip():
+        return None
+    raw = status.strip()
+    lowered = raw.lower()
+    if lowered in ORDER_STATUSES:
+        return lowered
+    if raw in _STATUS_ALIASES:
+        return _STATUS_ALIASES[raw]
+    supported = "、".join(f"{code}（{label}）" for code, label in ORDER_STATUS_LABELS.items())
+    raise ToolError(f"狀態「{raw}」不支援；僅支援 {supported}。")
+
+
+def _status_text(order: dict) -> str:
+    code = str(order.get("status") or "")
+    label = ORDER_STATUS_LABELS.get(code)
+    return f"{label}（{code}）" if label else code
+
+
+async def _find_order_by_number(order_number: str) -> dict | None:
+    """Find an order by its human-readable number.
+
+    The backend has no ``order_number`` filter, so scan at most
+    ``MAX_ORDER_PAGES`` pages. Bounding the scan keeps a typo from turning into
+    an unbounded request loop.
+    """
+    wanted = order_number.strip().upper()
+    page = 1
+    while page <= MAX_ORDER_PAGES:
+        data = await _get("/orders", page=page, page_size=100)
+        orders = data.get("data") or []
+        if not orders:
+            return None
+        for order in orders:
+            if str(order.get("order_number", "")).upper() == wanted:
+                return order
+        if page * 100 >= int(data.get("total") or 0):
+            return None
+        page += 1
+    return None
+
+
+async def _require_order(order_number: str) -> dict:
+    order = await _find_order_by_number(order_number)
+    if not order:
+        raise ToolError(f"找不到訂單編號 {order_number}")
+    return order
+
+
+async def _source_quotation_text(quotation_id: int | None) -> str:
+    if not quotation_id:
+        return "（無，直接下訂）"
+    try:
+        quotation = await _get(f"/quotations/{quotation_id}")
+    except ToolError:
+        return f"#{quotation_id}"
+    return f"{quotation['quotation_number']} — {_quotation_link(quotation['id'])}"
+
+
+def _format_order(order: dict, quotation_text: str) -> str:
+    customer_name = (order.get("customer") or {}).get("name", "")
+    items = order.get("items") or []
+    item_lines = [
+        f"  {i}. {item['product_name']} — 單價: {item['unit_price']}, "
+        f"數量: {item['quantity']}, 小計: {item['subtotal']}"
+        for i, item in enumerate(items, 1)
+    ]
+    items_text = "\n" + "\n".join(item_lines) if item_lines else "（無品項）"
+    return (
+        f"訂單編號: {order['order_number']}\n"
+        f"客戶: {customer_name}\n"
+        f"狀態: {_status_text(order)}\n"
+        f"總價: {order['total_price']}\n"
+        f"備註: {order.get('notes') or '（無）'}\n"
+        f"來源報價單: {quotation_text}\n"
+        f"建立時間: {order.get('created_at', '')}\n"
+        f"品項:{items_text}\n"
+        f"系統連結: {_order_link(order['id'])}"
+    )
+
+
+def _format_order_line(order: dict) -> str:
+    return (
+        f"- {order['order_number']} | 狀態: {_status_text(order)} | "
+        f"總價: {order['total_price']} | 連結: {_order_link(order['id'])}"
+    )
+
+
+async def _customer_id(customer_name: str | None) -> int | None:
+    if not customer_name or not customer_name.strip():
+        return None
+    customer = await _find_customer_by_name(customer_name.strip())
+    if not customer:
+        raise ToolError(f"找不到客戶「{customer_name.strip()}」")
+    return int(customer["id"])
+
+
+async def _all_orders(customer_id: int | None, status: str | None) -> list[dict]:
+    collected: list[dict] = []
+    page = 1
+    while page <= MAX_ORDER_PAGES:
+        params: dict = {"page": page, "page_size": 100}
+        if customer_id:
+            params["customer_id"] = customer_id
+        if status:
+            params["status"] = status
+        data = await _get("/orders", **params)
+        orders = data.get("data") or []
+        collected.extend(orders)
+        if not orders or page * 100 >= int(data.get("total") or 0):
+            break
+        page += 1
+    return collected
+
+
+@mcp.tool()
+async def get_order(order_number: str) -> str:
+    """根據訂單編號查詢訂單詳細資訊，包含狀態、品項與來源報價單。
+
+    Args:
+        order_number: 訂單編號，例如 ORD-20260118-001
+    """
+    order = await _require_order(order_number)
+    detail = await _get(f"/orders/{order['id']}")
+    quotation_text = await _source_quotation_text(detail.get("quotation_id"))
+    return _format_order(detail, quotation_text)
+
+
+@mcp.tool()
+async def list_orders(customer_name: str = "", status: str = "") -> str:
+    """查詢訂單清單，可依客戶名稱與狀態篩選。狀態僅支援
+    pending、confirmed、completed、cancelled。
+
+    Args:
+        customer_name: 客戶名稱，例如「史塔克工業」；留空表示不篩選客戶
+        status: 訂單狀態代碼或中文名稱；留空表示不篩選狀態
+    """
+    status_code = _normalize_status(status)
+    customer_id = await _customer_id(customer_name)
+    orders = await _all_orders(customer_id, status_code)
+
+    filters: list[str] = []
+    if customer_name.strip():
+        filters.append(f"客戶「{customer_name.strip()}」")
+    if status_code:
+        filters.append(f"狀態 {ORDER_STATUS_LABELS[status_code]}")
+    title = "訂單清單" + (f"（{'、'.join(filters)}）" if filters else "（全部）")
+
+    if not orders:
+        return f"{title}：查無符合條件的訂單。"
+
+    lines = [f"{title}（共 {len(orders)} 筆）"]
+    lines.extend(_format_order_line(order) for order in orders)
+    lines.append(f"訂單列表: {FRONTEND_URL}/orders")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def order_summary(customer_name: str = "") -> str:
+    """彙總訂單筆數與金額，可依客戶名稱篩選。計算由程式完成，不使用 LLM。
+
+    Args:
+        customer_name: 客戶名稱，例如「史塔克工業」；留空表示全部客戶
+    """
+    customer_id = await _customer_id(customer_name)
+    orders = await _all_orders(customer_id, None)
+
+    counts = {code: 0 for code in ORDER_STATUSES}
+    total = Decimal("0")
+    for order in orders:
+        code = str(order.get("status") or "")
+        if code in counts:
+            counts[code] += 1
+        total += Decimal(str(order.get("total_price") or "0"))
+
+    scope = f"客戶「{customer_name.strip()}」" if customer_name.strip() else "全部客戶"
+    lines = [f"訂單彙總（{scope}，共 {len(orders)} 筆）"]
+    lines.extend(
+        f"- {ORDER_STATUS_LABELS[code]}（{code}）: {counts[code]} 筆"
+        for code in ORDER_STATUSES
+    )
+    lines.append(f"合計金額: {total.quantize(Decimal('0.01'))}")
+    lines.append(f"訂單列表: {FRONTEND_URL}/orders")
+    if orders:
+        latest = max(orders, key=lambda order: int(order.get("id") or 0))
+        lines.append(f"最新訂單: {latest['order_number']} — {_order_link(latest['id'])}")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
