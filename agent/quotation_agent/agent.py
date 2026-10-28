@@ -77,14 +77,21 @@ def _build_model() -> Gemini:
 
     return Gemini(
         model=model_name,
-        client_kwargs=client_kwargs,
-        # Free-tier AI Studio keys allow only 5 requests/minute per model.
-        # Retry 429/5xx with exponential backoff instead of surfacing an error
-        # event to the user (the total delay is capped at ~60s per attempt).
+        client_kwargs={
+            **(client_kwargs or {}),
+            # Cap every request at 10s so a stalled attempt cannot hang the
+            # graph. google-genai applies this as a per-read timeout.
+            "http_options": types.HttpOptions(timeout=10_000),
+        },
+        # Free-tier AI Studio keys allow only 5 requests/minute per model, and
+        # some models (e.g. gemini-3.8-flash) answer 503 high-demand for long
+        # stretches. Retry sparingly so one prompt cannot stall for minutes:
+        # 10 + 0.5 + 10 + 1 + 10 ≈ 31.5s worst case over 3 attempts.
         retry_options=types.HttpRetryOptions(
-            initial_delay=2.0,
-            max_delay=60.0,
-            attempts=8,
+            initial_delay=0.5,
+            max_delay=1.0,
+            attempts=3,
+            jitter=0.0,
         ),
     )
 
