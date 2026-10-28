@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -271,10 +272,17 @@ async def _run_operation(
     ctx: Context,
     tool_name: str,
     arguments: dict[str, Any],
+    *,
+    unchanged_note: str = "",
 ) -> Event:
     result = await call_mcp_tool(ctx, tool_name, arguments)
+    text = result.text
+    # Some operations (e.g. duplicate) never touch the source quotation, but the
+    # tool text does not always say so. Add the reassurance when it is missing.
+    if unchanged_note and "未更動" not in text and "未修改" not in text:
+        text = f"{text}\n{unchanged_note}" if text else unchanged_note
     return Event(
-        output=result.text,
+        output=text,
         state={
             "pending_intent": None,
             "last_tool_error": result.is_error,
@@ -308,6 +316,7 @@ async def duplicate_quotation(ctx: Context, node_input: dict[str, Any]) -> Event
         ctx,
         "duplicate_quotation",
         {"quotation_number": request.quotation_number},
+        unchanged_note="原始報價單未被更動。",
     )
 
 
@@ -364,6 +373,41 @@ async def refuse(ctx: Context, node_input: dict[str, Any]) -> Event:
     )
 
 
+_FIELD_LINE = re.compile(r"^([^\s:：][^:：]{0,23})[:：]\s*(.*)$")
+_NUMBERED_ITEM = re.compile(r"^\s+\d+\.\s+(.*)$")
+
+
+def _wants_markdown(message: str) -> bool:
+    return re.search(r"markdown|\bmd\b", message, re.IGNORECASE) is not None
+
+
+def _to_markdown(text: str) -> str:
+    """Render a plain-text tool result as Markdown without making links Markdown.
+
+    The spec requires links to stay as bare URLs, so only headings, bold field
+    labels and list items are added; URLs are never wrapped in ``[text](url)``.
+    """
+    lines: list[str] = []
+    for line in text.splitlines():
+        field = _FIELD_LINE.match(line)
+        if field:
+            key = field.group(1).strip()
+            value = field.group(2).strip()
+            if value.startswith(("http://", "https://")):
+                label = f"**{key}（純文字）**"
+            else:
+                label = f"**{key}**"
+            lines.append(f"{label}：{value}" if value else label)
+            continue
+        item = _NUMBERED_ITEM.match(line)
+        if item:
+            lines.append(f"- {item.group(1).strip()}")
+            continue
+        lines.append(line)
+    intro = "> 已依您的要求排版如下；系統連結依規範維持純文字。\n\n"
+    return intro + "## 操作結果\n\n" + "\n".join(lines)
+
+
 async def respond(ctx: Context, node_input: Any) -> Event:
     """Emit the only user-facing text event, under the fixed node name `respond`."""
     if isinstance(node_input, str):
@@ -374,6 +418,10 @@ async def respond(ctx: Context, node_input: Any) -> Event:
         text = json.dumps(node_input, ensure_ascii=False, default=str)
     if not text:
         text = "操作完成，但系統沒有回傳內容。"
+
+    message = str(ctx.state.get("current_message") or "")
+    if _wants_markdown(message) and "http" in text:
+        text = _to_markdown(text)
 
     history = list(ctx.state.get("chat_history") or [])
     history.append(
