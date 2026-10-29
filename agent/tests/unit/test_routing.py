@@ -25,6 +25,22 @@ def test_weather_is_off_topic() -> None:
     assert routing.deterministic_off_topic("今天台北天氣如何？") == "天氣"
 
 
+def test_order_requests_are_handed_off() -> None:
+    assert routing.detect_order_request("我要查訂單，訂單編號：ORD-20260118-001")
+    assert routing.detect_order_request("ORD-20260118-001")
+    assert routing.detect_order_request("我要查訂單")
+
+
+def test_quotation_requests_stay_in_this_agent() -> None:
+    assert not routing.detect_order_request(
+        "我要查詢報價單，報價單編號：QT-20260330-001"
+    )
+    assert not routing.detect_order_request(
+        "我要將報價單轉訂單，報價單編號：QT-20260330-001"
+    )
+    assert not routing.detect_order_request("幫我轉訂單")
+
+
 def test_customer_crud_is_off_topic() -> None:
     assert (
         routing.deterministic_off_topic("幫我新增一個客戶，名稱：測試公司")

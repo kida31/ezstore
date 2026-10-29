@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EZStore A2A Application — Implementation Report</title>
+<style>
+  :root {
+    --ink: #111827;
+    --muted: #6b7280;
+    --line: #d1d5db;
+    --accent: #1d4ed8;
+    --soft: #f3f4f6;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: #e5e7eb; }
+
+  body {
+    margin: 0 auto;
+    padding: 12mm 13mm;
+    max-width: 210mm;
+    background: #fff;
+    color: var(--ink);
+    font-family: "Inter", "Noto Sans", "Helvetica Neue", system-ui, -apple-system,
+      "Segoe UI", sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 3.5mm; margin-bottom: 4mm; }
+  h1 { font-size: 18pt; line-height: 1.2; margin: 0 0 1.5mm; letter-spacing: -0.2pt; }
+  .subtitle { color: var(--muted); font-size: 9.5pt; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 1mm 5mm; margin-top: 2mm; color: var(--muted); font-size: 8.5pt; }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: 11pt;
+    margin: 3.4mm 0 1.4mm;
+    padding-left: 2.2mm;
+    border-left: 3px solid var(--accent);
+    line-height: 1.3;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  p { margin: 0 0 2mm; text-align: justify; }
+  p.evidence { text-align: left; word-break: break-word; }
+  p.evidence code { word-break: break-all; }
+
+  code {
+    font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 8.5pt;
+    background: var(--soft);
+    padding: 0.1mm 0.8mm;
+    border-radius: 2px;
+  }
+
+  pre {
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 1.5mm;
+    padding: 2mm 2.5mm;
+    overflow-x: auto;
+    font-size: 8pt;
+    line-height: 1.45;
+    margin: 1.5mm 0 2.5mm;
+  }
+  pre code { background: none; padding: 0; }
+
+  figure { margin: 2mm 0 3mm; break-inside: avoid; page-break-inside: avoid; }
+  .shot { width: 100%; display: block; border: 1px solid var(--line); border-radius: 1.5mm; }
+  figcaption { color: var(--muted); font-size: 8pt; margin-top: 1.2mm; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5mm 0 2.5mm;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  th, td { border: 1px solid var(--line); padding: 1.3mm 2mm; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; width: 34%; }
+
+  ul, ol { margin: 1mm 0 2mm; padding-left: 4.5mm; }
+  li { margin-bottom: 1.2mm; }
+  li::marker { color: var(--accent); font-weight: 600; }
+
+  .note {
+    background: var(--soft);
+    border-left: 3px solid var(--accent);
+    padding: 2mm 2.5mm;
+    font-size: 9pt;
+    margin: 2mm 0 0;
+    break-inside: avoid;
+  }
+
+  footer {
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 8pt;
+  }
+
+  @page { size: A4; margin: 12mm 13mm; }
+
+  @media print {
+    html { background: #fff; }
+    body { padding: 0; max-width: none; }
+  }
+
+  @media screen {
+    body { box-shadow: 0 2mm 12mm rgba(0,0,0,.12); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EZStore A2A Application — Implementation Report</h1>
+  <p class="subtitle">Quotation agent → order agent over the A2A protocol (bonus)</p>
+  <div class="meta">
+    <span><b>Scope</b>: <code>agent/quotation_agent/</code>, <code>agent/order_agent/</code></span>
+    <span><b>Model</b>: <code>gemini-3.1-flash-lite</code></span>
+    <span><b>Date</b>: 2026-10-28</span>
+  </div>
+</header>
+
+<h2>What was built</h2>
+<p>
+  The quotation agent now hands an order request to the order agent over A2A. The user stays in the
+  normal quotation chat at <code>http://localhost:3000/agent</code>; there is no app switch and no
+  special command. The order agent answers, the quotation agent relays the text, and a footer makes
+  the A2A hop visible:
+</p>
+<pre><code>（本回覆由訂單 Agent 透過 A2A 協定提供）</code></pre>
+<div class="note">
+  <b>No new service, no frontend change, no new MCP tool.</b> Both apps already live in the same
+  <code>agent</code> container and port 8080. The change adds a second A2A endpoint and a
+  deterministic handoff branch in the quotation graph.
+</div>
+
+<h2>Demo — real-model single turn</h2>
+<p>Prompt sent to <code>/agent</code>:</p>
+<pre><code>我要查訂單，訂單編號：ORD-20260118-001</code></pre>
+<figure>
+  <img class="shot" src=".screenshots/a2a-handoff.png"
+       alt="Quotation chat: an order lookup is answered by the order agent over A2A" />
+  <figcaption>
+    The answer comes from the order agent: order fields, items, a plain-text
+    <code>http://localhost:3000/orders/1</code> link, and the A2A footer. Captured while
+    <code>gemini-3.1-flash-lite</code> was available.
+  </figcaption>
+</figure>
+
+<h2>Demo — multi-turn over A2A</h2>
+<p>
+  Turn 1 asks for an order without a number; the order agent asks for the identifier. Turn 2
+  supplies it; the order agent continues from its A2A session state and returns the details.
+</p>
+<figure>
+  <img class="shot" src=".screenshots/a2a-multiturn-1.png"
+       alt="Turn 1: the order agent asks for the order number" />
+  <figcaption>Turn 1: the order agent asks for <code>ORD-YYYYMMDD-NNN</code> — the clarification is
+    relayed by the quotation agent.</figcaption>
+</figure>
+<figure>
+  <img class="shot" src=".screenshots/a2a-multiturn-2.png"
+       alt="Turn 2: the order details after the number is supplied" />
+  <figcaption>Turn 2: the bare order number is enough; the order agent keeps its pending state
+    through the A2A <code>context_id</code> and returns the detail.</figcaption>
+</figure>
+<div class="note">
+  <b>Capture note.</b> The two multi-turn screenshots were captured in the supported zero-cost mode
+  (<code>ORDER_AGENT_FAKE_LLM=1</code>) because the 3.1 endpoint was returning
+  <code>503 UNAVAILABLE</code> at that moment. The A2A hop, <code>context_id</code>, MCP call and UI
+  are the same as the real-model path; only the order classifier is the rule-based equivalent. The
+  whole two-turn exchange uses <b>0 Gemini calls</b> in that mode. The container is currently back on
+  the real model (<code>ORDER_AGENT_FAKE_LLM</code> empty).
+</div>
+
+<h2>How it works</h2>
+<pre><code>/agent  user message
+  → quotation.guard                 deterministic, no model call
+      ├─ order request  → order_handoff
+      │                     │  A2A: card discovery + message/send
+      │                     ▼
+      │                  order_agent (same port, /a2a/order_agent)
+      │                     ├─ classifier (1 call in real mode)
+      │                     └─ MCP get_order / list_orders / order_summary
+      │                     ▼
+      └─ otherwise      → classify_intent → existing quotation flow
+                              │
+                              ▼
+                           respond  (single user-facing text event)</code></pre>
+<ul>
+  <li>
+    <b>Server:</b> <code>attach_a2a_routes()</code> publishes an agent card and JSON-RPC endpoint for
+    each app. The card URL is built from <code>A2A_BASE_URL</code> (default
+    <code>http://localhost:8080</code>).
+  </li>
+  <li>
+    <b>Client:</b> <code>call_remote_agent()</code> resolves
+    <code>/.well-known/agent-card.json</code>, creates an A2A client, sends a
+    <code>message/send</code>, and returns the last non-JSON text from the stream.
+  </li>
+  <li>
+    <b>Handoff:</b> <code>order_handoff</code> calls the order agent with the quotation session id
+    as <code>context_id</code>, so the order agent keeps its clarification state on the next turn.
+  </li>
+  <li>
+    <b>Boundary:</b> <code>detect_order_request()</code> excludes quotation operations, especially
+    <code>報價單轉訂單</code>, so the existing six quotation commands are unchanged.
+  </li>
+</ul>
+
+<h2>A2A evidence</h2>
+<p>The order agent publishes a standard card:</p>
+<pre><code>{
+  "name": "order_agent",
+  "description": "EZStore order inquiry agent (read-only): look up an order by number, list a customer's orders, or summarise order counts and totals.",
+  "version": "0.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "http://localhost:8080/a2a/order_agent",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    },
+    {
+      "url": "http://localhost:8080/a2a/order_agent",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "0.3"
+    }
+  ]
+}</code></pre>
+<p>Check it from the running container:</p>
+<pre><code>docker compose exec agent python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8080/a2a/order_agent/.well-known/agent-card.json').read().decode())"</code></pre>
+<table>
+  <tr><th><code>quotation_agent</code></th>
+      <td>card <code>/a2a/quotation_agent/.well-known/agent-card.json</code> ·
+          RPC <code>/a2a/quotation_agent</code></td></tr>
+  <tr><th><code>order_agent</code></th>
+      <td>card <code>/a2a/order_agent/.well-known/agent-card.json</code> ·
+          RPC <code>/a2a/order_agent</code></td></tr>
+</table>
+
+<h2>API cost</h2>
+<table>
+  <tr><th>Interaction</th><th style="width:auto">Model calls</th></tr>
+  <tr><td>Order query containing a number</td><td>1 (order classifier)</td></tr>
+  <tr><td>Order clarification turn (<code>我要查訂單</code>)</td><td>1</td></tr>
+  <tr><td>Follow-up bare number (<code>ORD-…</code>)</td><td>0 (pending intent + direct path)</td></tr>
+  <tr><td>A2A card discovery / JSON-RPC</td><td>0</td></tr>
+  <tr><td>Quotation query (existing behavior)</td><td>1</td></tr>
+  <tr><td>Deterministic mode (<code>ORDER_AGENT_FAKE_LLM=1</code>)</td><td>0</td></tr>
+</table>
+<p>
+  Before this change, an order query sent to the quotation agent also cost one classifier call and
+  then refused. The new path moves that one call to the order agent, so there is <b>no net increase</b>.
+  The A2A transport itself never calls a model.
+</p>
+
+<h2>Verification</h2>
+<table>
+  <tr><th>Unit tests</th><td><b>35 passed</b> — including the handoff detector and the
+      <code>報價單轉訂單</code> boundary</td></tr>
+  <tr><th>Integration tests</th><td><b>5 passed</b> with the MCP server</td></tr>
+  <tr><th>Browser E2E</th><td>real-model single-turn handoff (screenshot above) and deterministic
+      multi-turn handoff</td></tr>
+  <tr><th>A2A card</th><td><code>200</code>; advertised URL reachable from the agent container</td></tr>
+  <tr><th>Docker</th><td><code>agent</code>, <code>mcp-server</code>, <code>backend</code>,
+      <code>db</code> healthy</td></tr>
+  <tr><th>Model state</th><td><code>AGENT_MODEL=gemini-3.1-flash-lite</code>;
+      <code>ORDER_AGENT_FAKE_LLM</code> empty</td></tr>
+  <tr><th>Development budget</th><td>well under 50 model calls; the 503 retries were the bulk of the
+      failed attempts</td></tr>
+</table>
+
+<h2>Files changed</h2>
+<ul>
+  <li><code>agent/quotation_agent/app_utils/a2a.py</code> — <code>A2A_BASE_URL</code>,
+      <code>call_remote_agent()</code>.</li>
+  <li><code>agent/quotation_agent/fast_api_app.py</code> — publishes
+      <code>/a2a/order_agent</code> using the real order graph.</li>
+  <li><code>agent/quotation_agent/agent.py</code> — <code>guard</code> route,
+      <code>order_handoff</code>, edge map, Markdown-safe relay.</li>
+  <li><code>agent/quotation_agent/routing.py</code> — <code>detect_order_request()</code>.</li>
+  <li><code>agent/tests/unit/test_routing.py</code> — handoff and regression assertions.</li>
+  <li><code>agent/.env.example</code>, <code>docker-compose.yml</code> —
+      <code>A2A_BASE_URL</code>; model default <code>gemini-3.1-flash-lite</code>.</li>
+  <li><code>agent/README.md</code>, <code>README.md</code>, <code>README.zh-TW.md</code> — A2A
+      section and model update.</li>
+  <li><code>order-agent-report.md</code> — boundary section replaced with the A2A handoff.</li>
+</ul>
+
+<h2>Reproduce</h2>
+<pre><code># Build the local agent (the published image does not contain this change)
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build agent
+
+# Open the normal quotation UI
+#   http://localhost:3000/agent
+# Send:
+#   我要查訂單，訂單編號：ORD-20260118-001</code></pre>
+<p>Zero-cost repeatable demo:</p>
+<pre><code>ORDER_AGENT_FAKE_LLM=1 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d agent
+# ... demo ...
+# back to the real model:
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d agent</code></pre>
+<p>
+  The A2A routes are served by <code>quotation_agent.fast_api_app:app</code> (the Compose
+  entrypoint), not by <code>adk web</code> / <code>agents-cli playground</code>. For local uvicorn,
+  set <code>A2A_BASE_URL</code> to that port (for example
+  <code>A2A_BASE_URL=http://localhost:8099</code>).
+</p>
+
+<h2>Known limitations</h2>
+<ul>
+  <li>
+    <b>Provider availability:</b> <code>gemini-3.1-flash-lite</code> returned
+    <code>503 UNAVAILABLE</code> during part of the session. The order agent's fallback text is
+    intentional and the A2A hop still succeeds; the deterministic mode avoids the dependency for a
+    demo.
+  </li>
+  <li>
+    <b>Same-process A2A:</b> both apps run in one container and the handoff calls the same uvicorn
+    process over real HTTP. It demonstrates the protocol and card discovery, but it is not a separate
+    deployment. A dedicated order-agent service would be the next step if independent scaling is
+    required.
+  </li>
+  <li><b>In-memory A2A task/session store:</b> state is lost on restart.</li>
+  <li>
+    <b>Auto-generated card:</b> the card contains the workflow's internal nodes as skills (16
+    entries). It is valid but noisy; a curated card would be a polish item.
+  </li>
+  <li>
+    <b>Footer:</b> the A2A footer is a demo aid; it is a single string in
+    <code>order_handoff</code> and can be removed without touching the protocol path.
+  </li>
+</ul>
+
+<footer>
+  EZStore — ADK 2.13 graph Workflow · MCP Server (Streamable HTTP) · A2A JSON-RPC ·
+  screenshots in <code>.screenshots/</code> · reproduce via <code>a2a-report.md</code> and
+  <code>agent/README.md</code>.
+</footer>
+
+</body>
+</html>

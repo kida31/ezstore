@@ -21,6 +21,7 @@ from google.adk.workflow import Workflow
 from google.genai import types
 
 from quotation_agent import prompts, routing
+from quotation_agent.app_utils.a2a import a2a_base_url, call_remote_agent
 from quotation_agent.mcp_client import call_mcp_tool
 from quotation_agent.models import Intent, IntentType
 
@@ -34,7 +35,7 @@ except ImportError:  # pragma: no cover - dotenv ships with google-adk
     pass
 
 
-_MODEL_NAME = os.getenv("AGENT_MODEL", "gemini-3.8-flash")
+_MODEL_NAME = os.getenv("AGENT_MODEL", "gemini-3.1-flash-lite")
 
 
 def _env_true(name: str) -> bool:
@@ -84,8 +85,8 @@ def _build_model() -> Gemini:
             "http_options": types.HttpOptions(timeout=10_000),
         },
         # Free-tier AI Studio keys allow only 5 requests/minute per model, and
-        # some models (e.g. gemini-3.8-flash) answer 503 high-demand for long
-        # stretches. Retry sparingly so one prompt cannot stall for minutes:
+        # the model can answer 503 high-demand for long stretches. Retry
+        # sparingly so one prompt cannot stall for minutes:
         # 10 + 0.5 + 10 + 1 + 10 ≈ 31.5s worst case over 3 attempts.
         retry_options=types.HttpRetryOptions(
             initial_delay=0.5,
@@ -196,20 +197,48 @@ def load_context(ctx: Context, node_input: Any) -> Event:
             "current_message": message,
             "pending_intent": pending_payload,
             "pending_summary": pending_summary,
+            # Reset per turn: only the handoff node turns this on.
+            "handoff_order": False,
         },
     )
 
 
 def guard(ctx: Context, node_input: str) -> Event:
-    """Deterministically flag unmistakable out-of-scope requests."""
+    """Deterministically flag off-topic and order requests.
+
+    Order requests skip the classifier entirely: the order agent owns that
+    domain, and the handoff node talks to it over A2A. This keeps the cost of an
+    order turn at one call (the order agent's own classifier), not two.
+    """
     reason = routing.deterministic_off_topic(node_input)
+    order_request = not reason and routing.detect_order_request(node_input)
     return Event(
         output=node_input,
+        route="order_handoff" if order_request else "classifier",
         state={
             "guard_off_topic": bool(reason),
             "guard_reason": reason or "",
         },
     )
+
+
+async def order_handoff(ctx: Context, node_input: str) -> Event:
+    """Hand the turn to the order agent over A2A and relay its answer."""
+    text = await call_remote_agent(
+        f"{a2a_base_url()}/a2a/order_agent",
+        node_input,
+        # Stable across the chat session so the order agent keeps its
+        # clarification/pending state on the next turn.
+        context_id=getattr(ctx.session, "id", None),
+    )
+    if not text:
+        text = (
+            "目前無法連線訂單 Agent（A2A）。請稍後再試，"
+            "或改用 http://localhost:3000/agent?app=order_agent"
+        )
+    else:
+        text = f"{text}\n\n（本回覆由訂單 Agent 透過 A2A 協定提供）"
+    return Event(output=text, state={"pending_intent": None, "handoff_order": True})
 
 
 def route_intent(ctx: Context, node_input: dict[str, Any]) -> Event:
@@ -427,7 +456,13 @@ async def respond(ctx: Context, node_input: Any) -> Event:
         text = "操作完成，但系統沒有回傳內容。"
 
     message = str(ctx.state.get("current_message") or "")
-    if _wants_markdown(message) and "http" in text:
+    # Order replies keep the order agent's plain-text links even when the user
+    # asked for Markdown in the handoff turn.
+    if (
+        not ctx.state.get("handoff_order")
+        and _wants_markdown(message)
+        and "http" in text
+    ):
         text = _to_markdown(text)
 
     history = list(ctx.state.get("chat_history") or [])
@@ -455,8 +490,15 @@ async def respond(ctx: Context, node_input: Any) -> Event:
 edges = [
     ("START", load_context),
     (load_context, guard),
-    (guard, classifier),
+    (
+        guard,
+        {
+            "classifier": classifier,
+            "order_handoff": order_handoff,
+        },
+    ),
     (classifier, route_intent),
+    (order_handoff, respond),
     (
         route_intent,
         {

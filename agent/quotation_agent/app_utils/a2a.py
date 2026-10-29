@@ -22,9 +22,14 @@ with Gemini.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING
 
+import httpx
+from a2a.client import ClientConfig, ClientFactory
+from a2a.client.card_resolver import A2ACardResolver
+from a2a.helpers import get_stream_response_text, new_text_message
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
     add_a2a_routes_to_fastapi,
@@ -32,7 +37,13 @@ from a2a.server.routes import (
     create_jsonrpc_routes,
 )
 from a2a.server.tasks import TaskStore
-from a2a.types import AgentCapabilities, AgentCard, AgentExtension, AgentInterface
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentExtension,
+    AgentInterface,
+    SendMessageRequest,
+)
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
@@ -42,12 +53,25 @@ if TYPE_CHECKING:
     from google.adk.agents import BaseAgent
     from google.adk.runners import Runner
 
+logger = logging.getLogger(__name__)
+
 # URI advertised on the agent card describing the executor extension shipped
 # by ADK. Kept as a module-level constant so callers can override or extend
 # the capabilities list when needed.
 _ADK_AGENT_EXECUTOR_EXTENSION_URI = (
     "https://google.github.io/adk-docs/a2a/a2a-extension/"
 )
+
+# Base URL advertised on every agent card. It must be reachable from the
+# process that consumes the card; inside Docker, localhost:8080 is the agent
+# itself. Local runs set this to their own port (e.g. http://localhost:8099).
+DEFAULT_A2A_BASE_URL = "http://localhost:8080"
+
+
+def a2a_base_url() -> str:
+    return (
+        os.getenv("A2A_BASE_URL") or os.getenv("APP_URL") or DEFAULT_A2A_BASE_URL
+    ).rstrip("/")
 
 
 def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
@@ -98,10 +122,11 @@ async def attach_a2a_routes(
     The ``runner`` should share the session/artifact/memory services with the
     standard ADK path. ``capabilities``, ``agent_version``, and ``app_url``
     override their defaults (streaming + ADK extension, ``AGENT_VERSION``,
-    ``APP_URL``). Call once per app — typically in a FastAPI ``lifespan``, since
-    the card is built asynchronously; repeated calls register duplicate routes.
+    ``A2A_BASE_URL``). Call once per app — typically in a FastAPI ``lifespan``,
+    since the card is built asynchronously; repeated calls register duplicate
+    routes.
     """
-    resolved_app_url = app_url or os.getenv("APP_URL", "http://0.0.0.0:8000")
+    resolved_app_url = app_url or a2a_base_url()
     resolved_agent_version = agent_version or os.getenv("AGENT_VERSION", "0.1.0")
     resolved_capabilities = capabilities or _default_capabilities()
 
@@ -133,3 +158,49 @@ async def attach_a2a_routes(
             enable_v0_3_compat=True,
         ),
     )
+
+
+async def call_remote_agent(
+    base_url: str,
+    text: str,
+    *,
+    context_id: str | None = None,
+    timeout: float = 120.0,
+) -> str | None:
+    """Send one message to a remote ADK agent over A2A and return its answer.
+
+    ``base_url`` is the agent's A2A base (e.g. ``http://localhost:8080/a2a/order_agent``);
+    the card is discovered at ``/.well-known/agent-card.json``. A2A streams every
+    ADK event, including the classifier's JSON, so the last non-JSON text wins.
+    Returns ``None`` on any transport/protocol failure; callers decide the
+    user-facing fallback.
+    """
+    client = None
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as http_client:
+            card = await A2ACardResolver(http_client, base_url).get_agent_card()
+            client = ClientFactory(
+                ClientConfig(streaming=True, httpx_client=http_client)
+            ).create(card)
+            request = SendMessageRequest(
+                message=new_text_message(text, context_id=context_id)
+            )
+
+            answer: str | None = None
+            async for event in client.send_message(request):
+                chunk = get_stream_response_text(event).strip()
+                if not chunk:
+                    continue
+                if chunk.startswith("{") and '"intent"' in chunk:
+                    continue
+                answer = chunk
+            return answer
+    except Exception:  # noqa: BLE001 - surfaced as a user-facing fallback
+        logger.exception("A2A call to %s failed", base_url)
+        return None
+    finally:
+        if client is not None:
+            try:
+                await client.close()
+            except Exception:  # noqa: BLE001 - shutdown is best effort
+                logger.debug("Ignoring A2A client close error", exc_info=True)

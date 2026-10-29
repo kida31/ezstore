@@ -18,7 +18,7 @@ EZStore 提供四大核心模組，管理 B2B 銷售流程：
 | **產品管理** | 產品資料的 CRUD — 產品編號、名稱、描述、成本、牌價、庫存、供應商 |
 | **報價單管理** | 報價單的建立、修改、發佈、刪除。單價由「報價因子」乘以牌價計算。已發佈的報價單不可再修改。 |
 | **訂單管理** | 訂單的 CRUD — 可選擇關聯已發佈的報價單 |
-| **AI 智能助理** | 自然語言報價單管理助手 — 查詢、複製、調整報價因子/總價、轉為訂單。Google ADK 2.x Graph Workflow + Gemini 3.8 Flash（`AGENT_MODEL`，可用 3.5 備援）+ MCP Server，以 google-agents-cli 建立骨架。 |
+| **AI 智能助理** | 自然語言報價單管理助手 — 查詢、複製、調整報價因子/總價、轉為訂單。Google ADK 2.x Graph Workflow + Gemini 3.1 Flash Lite（`AGENT_MODEL`）+ MCP Server，以 google-agents-cli 建立骨架。 |
 
 ### 技術棧
 
@@ -27,7 +27,7 @@ EZStore 提供四大核心模組，管理 B2B 銷售流程：
 | 後端 | Go 1.25 · Gin · GORM · Swagger (swaggo) · Testify |
 | 前端 | React 19 · TypeScript · Tailwind CSS 4 · Vite 8 · TanStack React Query · React Hook Form · React Router |
 | 資料庫 | PostgreSQL 16 |
-| AI 智能助理 | Python 3.12 · Google ADK 2.10+（Graph Workflow API）· google-agents-cli 1.11 · Gemini 3.8 Flash（`AGENT_MODEL`，可用 3.5 備援）· MCP Python SDK 2.x（Streamable HTTP）· uv |
+| AI 智能助理 | Python 3.12 · Google ADK 2.10+（Graph Workflow API）· google-agents-cli 1.11 · Gemini 3.1 Flash Lite（`AGENT_MODEL`）· MCP Python SDK 2.x（Streamable HTTP）· uv |
 | 編譯部署 | Docker · Docker Compose · Bun（前端）· Nginx（前端服務與 API 反向代理）|
 
 ### 專案目錄結構
@@ -256,14 +256,14 @@ $(go env GOPATH)/bin/swag init -g main.go --parseDependency --parseInternal
 
 `agent/` 服務已在本分支實作。EZStore 內建自然語言報價單管理助手，以 Google ADK 2.x 開發。Agent 是一張 **Graph Workflow 圖**：只有意圖分類節點會呼叫 LLM，工具選擇、參數傳遞、追問與拒答全部由程式決定。
 
-`AGENT_MODEL` 決定 Gemini 模型，預設 `gemini-3.8-flash`；若 3.8 回應 `503 high demand`，改成 `gemini-3.5-flash`。完整設計見 [agent/README.md](agent/README.md)。
+`AGENT_MODEL` 決定 Gemini 模型，預設 `gemini-3.1-flash-lite`。完整設計見 [agent/README.md](agent/README.md)。
 
 **架構：**
 
 ```
 使用者 → React Chat UI → nginx /agent-api → Agent（ADK FastAPI，port 8080）→ MCP Server（port 8000）→ Backend REST API
                                                │                                     Streamable HTTP
-                                          Gemini 3.8 Flash                           （mcp Python SDK 2.x）
+                                          Gemini 3.1 Flash Lite                           （mcp Python SDK 2.x）
                               （AI Studio API key 或 Vertex AI；AGENT_MODEL）
 
 Workflow 圖（agent/quotation_agent/agent.py）：
@@ -305,7 +305,7 @@ BACKEND_URL=http://localhost:8080 MCP_PORT=8010 uv run python server.py
 # Agent（另開終端）
 cd agent && cp .env.example .env    # 填 GEMINI_API_KEY，MCP_URL 改為 http://localhost:8010/mcp
                                     # 或改走 Vertex AI：先 `gcloud auth application-default login`，再設 GOOGLE_GENAI_USE_VERTEXAI=true 與 GOOGLE_CLOUD_PROJECT
-                                    # AGENT_MODEL 預設 gemini-3.8-flash；3.8 無法使用時改成 gemini-3.5-flash
+                                    # AGENT_MODEL 預設 gemini-3.1-flash-lite
 uv sync --group dev --extra eval
 agents-cli playground --port 8090   # 網頁介面（8080 是後端）
 agents-cli run "我要查詢報價單，報價單編號：QT-20260330-001"

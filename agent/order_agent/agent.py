@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover - dotenv ships with google-adk
     pass
 
 
-_MODEL_NAME = os.getenv("AGENT_MODEL", "gemini-3.8-flash")
+_MODEL_NAME = os.getenv("AGENT_MODEL", "gemini-3.1-flash-lite")
 
 ORDER_STATUSES: tuple[str, ...] = ("pending", "confirmed", "completed", "cancelled")
 STATUS_LABELS: dict[str, str] = {

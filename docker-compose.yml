@@ -53,7 +53,10 @@ services:
     pull_policy: always
     environment:
       MCP_URL: http://mcp-server:8000/mcp
-      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.8-flash}
+      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.1-flash-lite}
+      # Base URL advertised on the A2A agent cards. Inside this container the
+      # quotation -> order handoff calls http://localhost:8080/a2a/order_agent.
+      A2A_BASE_URL: ${A2A_BASE_URL:-http://localhost:8080}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}

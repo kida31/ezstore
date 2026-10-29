@@ -22,14 +22,16 @@ pass, the 8-turn acceptance set used 4 calls.
 One conversation covers detail lookup, a customer's orders and a status summary; counts and totals
 are computed in code, and links are plain text.
 
-## Boundary with the quotation agent
+## Handoff from the quotation agent
 
-![Quotation agent refusing an order lookup](.screenshots/order-agent-negative-quotation.png)
+![Quotation agent handing an order lookup to the order agent over A2A](.screenshots/a2a-handoff.png)
 
-The same sentence, "我要查詢訂單，訂單編號：ORD-20260118-001", sent to `/agent` (quotation agent)
-is refused — the two apps' guards are complementary. The reverse also holds: the order agent refuses
-quotation operations and any order write (e.g. changing the status to "已出貨") and points the user
-to the quotation agent or to manual processing in the UI.
+The same sentence, "我要查訂單，訂單編號：ORD-20260118-001", sent to `/agent` (quotation agent) is
+now handed to this agent over A2A; the answer appears in the same chat with an A2A footer. The
+quotation agent's guard detects the order domain before calling its classifier, so the handoff costs
+one order-agent classifier call and no quotation-agent call. The reverse still holds: the order agent
+refuses quotation operations and any order write (e.g. changing the status to "已出貨") and points the
+user to the quotation agent or to manual processing in the UI.
 
 ## Preliminary automated checks
 

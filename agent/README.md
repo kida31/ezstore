@@ -66,7 +66,7 @@ Copy `agent/.env.example` to `agent/.env` for local development. The root
 | Variable | Purpose |
 |----------|---------|
 | `GEMINI_API_KEY` | Google AI Studio API key. Use either this or the Vertex AI settings below. |
-| `AGENT_MODEL` | Gemini model name. Default `gemini-3.8-flash`; if 3.8 returns `503 high demand`, set `gemini-3.5-flash`. |
+| `AGENT_MODEL` | Gemini model name. Default `gemini-3.1-flash-lite`. |
 | `MCP_URL` | MCP endpoint. Local: `http://localhost:8010/mcp`; Compose: `http://mcp-server:8000/mcp`. |
 | `FRONTEND_URL` | Public frontend base used in plain-text links (`http://localhost:3000` locally). |
 | `ALLOW_ORIGINS` | CORS origins for the agent API. |
@@ -210,6 +210,46 @@ Eval: `tests/eval/datasets/order-actions.json`,
 >   --config tests/eval/order_eval_config.yaml --qps 1 \
 >   --output artifacts/grade_results/order-actions
 > ```
+
+## A2A handoff (quotation → order)
+
+Both apps expose A2A cards and JSON-RPC endpoints on the same port:
+
+| App | Agent card | RPC |
+|---|---|---|
+| `quotation_agent` | `/a2a/quotation_agent/.well-known/agent-card.json` | `/a2a/quotation_agent` |
+| `order_agent` | `/a2a/order_agent/.well-known/agent-card.json` | `/a2a/order_agent` |
+
+The quotation agent's `guard` recognises an order request before the LLM and
+routes it to `order_handoff`, which calls the order agent over A2A and relays the
+answer in the same chat. The order agent keeps its own clarification state via
+the A2A `context_id`, so `我要查訂單` → `ORD-…` continues correctly.
+
+```
+/agent  user message
+  → guard (deterministic)
+      ├─ order request → order_handoff ──A2A──▶ order_agent → respond
+      └─ otherwise     → classify_intent → …
+```
+
+![Quotation chat: an order lookup is answered by the order agent over A2A](../.screenshots/a2a-handoff.png)
+
+Full demo report with screenshots and cost breakdown: [a2a-report.md](../a2a-report.md).
+
+Cost: an order turn skips the quotation classifier and uses only the order
+agent's classifier, so it is **1 call total** (not 2). The A2A transport itself
+does not call a model. Set `A2A_BASE_URL` to the port the agent is served on:
+
+The A2A routes are served by `quotation_agent.fast_api_app:app` (the Compose
+entrypoint). `adk web` / `agents-cli playground` do not mount them, so use the
+FastAPI app or Docker for the handoff demo.
+
+```bash
+# Docker: default http://localhost:8080 (the container calls itself)
+# Local:  A2A_BASE_URL=http://localhost:8099 uv run uvicorn quotation_agent.fast_api_app:app --port 8099
+docker compose exec agent python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8080/a2a/order_agent/.well-known/agent-card.json').read().decode())"
+```
 
 ## Docker
 

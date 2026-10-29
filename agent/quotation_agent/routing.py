@@ -142,6 +142,25 @@ def deterministic_off_topic(text: str) -> str | None:
     return None
 
 
+_ORDER_NUMBER_RE = re.compile(r"ORD-\d{8}-\d{3}", re.IGNORECASE)
+_QUOTATION_MARKER_RE = re.compile(r"報價單|QT-\d{8}-\d{3}", re.IGNORECASE)
+_ORDER_CONVERSION_RE = re.compile(r"轉(?:成|為)?\s*訂單")
+
+
+def detect_order_request(text: str) -> bool:
+    """True when the message belongs to the order agent (A2A handoff).
+
+    Quotation operations win: ``報價單轉訂單`` and a bare ``轉訂單`` must stay
+    in this agent, or the existing convert_to_order flow regresses.
+    """
+    value = text or ""
+    if _ORDER_NUMBER_RE.search(value):
+        return True
+    if _QUOTATION_MARKER_RE.search(value) or _ORDER_CONVERSION_RE.search(value):
+        return False
+    return "訂單" in value
+
+
 def infer_pending_from_user_text(text: str) -> Intent | None:
     """Infer the operation from the user turn before a clarification.
 
